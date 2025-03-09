@@ -1,5 +1,5 @@
 <template>
-  <q-page class="flex-grow">
+  <q-page class="flex-grow q-ma-xl">
     <tasks-view />
   </q-page>
 </template>
@@ -10,5 +10,9 @@ import TasksView from 'src/components/TasksView.vue'
 <style>
 ::-webkit-scrollbar {
   display: none;
+}
+
+div.q-page-container {
+  background-color: #1d1d1d;
 }
 </style>
