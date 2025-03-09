@@ -1,41 +1,34 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated>
+    <q-header dark style="background-color: #1d1d1d">
       <q-toolbar>
         <q-btn
           flat
           dense
           round
-          icon="menu"
+          :icon="leftDrawerOpen ? 'sym_o_menu_open' : 'sym_o_menu'"
           aria-label="Menu"
           @click="toggleLeftDrawer"
         />
 
-        <q-toolbar-title>
-          Quasar App
-        </q-toolbar-title>
+        <q-toolbar-title> Extremely Focused Organizational Tool </q-toolbar-title>
 
-        <div>Quasar v{{ $q.version }}</div>
+        <div>EFOT v{{ $q.version }}</div>
       </q-toolbar>
     </q-header>
 
     <q-drawer
+      @mouseenter="miniState = false"
+      @mouseleave="miniState = true"
+      :mini="miniState"
       v-model="leftDrawerOpen"
       show-if-above
-      bordered
+      class="left-drawer"
     >
       <q-list>
-        <q-item-label
-          header
-        >
-          Essential Links
-        </q-item-label>
+        <q-item-label header> EFOT </q-item-label>
 
-        <EssentialLink
-          v-for="link in linksList"
-          :key="link.title"
-          v-bind="link"
-        />
+        <EssentialLink v-for="(linkItem, index) in linksList" :key="index" v-bind="linkItem" />
       </q-list>
     </q-drawer>
 
@@ -48,55 +41,33 @@
 <script setup>
 import { ref } from 'vue'
 import EssentialLink from 'components/EssentialLink.vue'
+import { useRoute } from 'vue-router' // Import useRoute
 
 const linksList = [
   {
-    title: 'Docs',
-    caption: 'quasar.dev',
-    icon: 'school',
-    link: 'https://quasar.dev'
+    title: 'Calendar',
+    //caption: 'quasar.dev',
+    icon: 'sym_o_calendar_month',
+    link: { name: 'calendar' },
   },
   {
-    title: 'Github',
-    caption: 'github.com/quasarframework',
-    icon: 'code',
-    link: 'https://github.com/quasarframework'
+    title: 'Tasks',
+    //caption: 'github.com/quasarframework',
+    icon: 'sym_o_checklist',
+    link: { name: 'tasks' },
   },
-  {
-    title: 'Discord Chat Channel',
-    caption: 'chat.quasar.dev',
-    icon: 'chat',
-    link: 'https://chat.quasar.dev'
-  },
-  {
-    title: 'Forum',
-    caption: 'forum.quasar.dev',
-    icon: 'record_voice_over',
-    link: 'https://forum.quasar.dev'
-  },
-  {
-    title: 'Twitter',
-    caption: '@quasarframework',
-    icon: 'rss_feed',
-    link: 'https://twitter.quasar.dev'
-  },
-  {
-    title: 'Facebook',
-    caption: '@QuasarFramework',
-    icon: 'public',
-    link: 'https://facebook.quasar.dev'
-  },
-  {
-    title: 'Quasar Awesome',
-    caption: 'Community Quasar projects',
-    icon: 'favorite',
-    link: 'https://awesome.quasar.dev'
-  }
 ]
 
 const leftDrawerOpen = ref(false)
+const miniState = ref(true)
+const route = useRoute() // Get the current route
 
-function toggleLeftDrawer () {
+function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value
 }
 </script>
+<style>
+.q-drawer__content .left-drawer {
+  border-left: 1px solid #ccc !important;
+}
+</style>
