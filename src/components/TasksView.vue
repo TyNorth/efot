@@ -1,5 +1,5 @@
 <template>
-  <q-card class="my-card" flat>
+  <q-card class="my-card full-height" flat bordered>
     <q-tabs
       v-model="activeTab"
       dense
@@ -9,24 +9,16 @@
       align="justify"
       narrow-indicator
     >
-      <q-tab
-        v-for="(tab, index) in tabs"
-        :key="index"
-        :name="`tab-${index}`"
-        :label="tab.name"
-        @click="
-          () => {
-            selectedListIndex = index
-          }
-        "
-      />
+      <q-tab name="priority" label="Priority" />
+
+      <q-tab v-for="tab in nonPriorityTaskLists" :key="tab.id" :name="tab.id" :label="tab.name" />
       <q-btn
-        v-if="tabs.length < 5"
+        v-if="efotStore.taskLists.length < 6"
         flat
         round
         dense
         icon="sym_o_add"
-        @click="addTab"
+        @click="efotStore.addTaskList()"
         class="q-ml-md"
         aria-label="Add Tab"
       />
@@ -34,47 +26,55 @@
 
     <q-separator />
 
-    <q-card-section v-if="tabs.length > 0">
-      <div class="row items-center q-mb-md">
-        <div class="col">
-          <q-input
-            v-model="tabs[selectedListIndex].name"
-            dense
-            outlined
-            label="List Name"
-            @blur="saveTabs"
-          />
-        </div>
-        <div class="col-auto">
-          <q-btn
-            flat
-            round
-            dense
-            icon="sym_o_delete"
-            color="negative"
-            @click="removeTab(selectedListIndex)"
-            aria-label="Remove Tab"
-          />
-        </div>
+    <q-card-section class="q-pa-none flex-grow">
+      <div class="row items-center q-mb-md q-px-md q-mt-sm flex" v-if="activeTab !== 'priority'">
+        <q-input
+          v-model="selectedListName"
+          dense
+          filled
+          label="List Name"
+          class="col-11"
+          @blur="efotStore.saveTaskLists"
+        />
+
+        <q-btn
+          flat
+          size="lg"
+          icon="sym_o_delete"
+          color="negative"
+          @click="removeTab(activeTab)"
+          aria-label="Remove Tab"
+          class="col-1"
+        />
       </div>
 
       <q-list dense class="full-height-available">
-        <q-item
-          v-for="(task, taskIndex) in tabs[selectedListIndex].tasks"
-          :key="taskIndex"
-          clickable
-        >
+        <q-item v-for="task in selectedTasks" :key="task.id" clickable>
           <q-item-section side>
-            <q-checkbox v-model="task.done" @update:model-value="saveTabs" />
+            <q-checkbox
+              :model-value="checkboxStatus(task)"
+              @update:model-value="(val) => updateTaskStatus(task, val)"
+              toggle-indeterminate
+              :color="checkboxColor(task)"
+            />
           </q-item-section>
 
           <q-item-section>
-            <q-item-label :class="{ 'text-strike': task.done }">
-              <q-input v-model="task.label" dense outlined @blur="saveTabs" :debounce="300" />
+            <q-item-label :class="{ 'text-strike': task.status === 'completed' }">
+              <q-input
+                v-model="task.label"
+                dense
+                outlined
+                @blur="updateTask(task)"
+                :debounce="300"
+              />
             </q-item-label>
 
             <q-item-label caption>
-              {{ task.done ? 'Completed' : 'Pending' }}
+              {{ taskStatusLabel(task) }}
+            </q-item-label>
+            <q-item-label v-if="task.reminderDate" caption>
+              Reminder: {{ formatDate(task.reminderDate) }} {{ task.reminderTime }}
             </q-item-label>
           </q-item-section>
 
@@ -83,106 +83,181 @@
               flat
               round
               dense
+              icon="sym_o_edit"
+              color="primary"
+              @click="goToEditTask(task)"
+              aria-label="Edit Task"
+            />
+            <q-btn
+              v-if="task.priority"
+              icon="star"
+              color="yellow"
+              flat
+              dense
+              @click.stop="togglePriority(task)"
+            />
+            <q-btn
+              v-else
+              icon="star_outline"
+              color="grey"
+              flat
+              dense
+              @click.stop="togglePriority(task)"
+            />
+            <q-btn
+              flat
+              round
+              dense
               icon="sym_o_delete"
               color="negative"
-              @click="removeTask(selectedListIndex, taskIndex)"
+              @click="removeTask(task)"
               aria-label="Remove Task"
             />
           </q-item-section>
         </q-item>
-        <q-item>
-          <q-item-section>
-            <q-input
-              dense
-              outlined
-              v-model="newTaskLabel"
-              label="Add Task"
-              @keyup.enter="addTask"
-            />
-          </q-item-section>
-          <q-item-section side>
-            <q-btn
-              round
-              dense
-              icon="sym_o_add"
-              color="primary"
-              @click="addTask"
-              aria-label="Add Task"
-            />
-          </q-item-section>
-        </q-item>
       </q-list>
-    </q-card-section>
-    <q-card-section v-else>
-      <p class="text-center">No lists created yet. Click the "+" button to add a list.</p>
+      <q-btn class="float-right q-ma-md" color="primary" icon="sym_o_add" @click="goToCreateTask">
+        Add Task
+      </q-btn>
     </q-card-section>
   </q-card>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
-import { LocalStorage } from 'quasar'
+import { ref, onMounted, computed } from 'vue'
+import { date } from 'quasar'
+import { useRouter } from 'vue-router'
+import { useEfotStore } from 'src/stores/efot-store'
+import { storeToRefs } from 'pinia'
 
-const activeTab = ref('tab-0')
-const tabs = ref([])
-const selectedListIndex = ref(0)
-const newTaskLabel = ref('')
+const router = useRouter()
+const efotStore = useEfotStore()
+const { taskLists } = storeToRefs(efotStore)
+const activeTab = ref('priority')
+const priorityListId = ref(null)
 
-// Load tabs from LocalStorage on component mount
 onMounted(() => {
-  const savedTabs = LocalStorage.getItem('todoTabs')
-  if (savedTabs) {
-    tabs.value = savedTabs
-    if (tabs.value.length > 0) {
-      activeTab.value = 'tab-0' //set active tab to the first if exist
-    }
+  efotStore.initializeStore()
+
+  let priorityList = efotStore.taskLists.find((list) => list.name === 'Priority')
+  if (!priorityList) {
+    efotStore.addTaskList('Priority')
+    priorityList = efotStore.taskLists.find((list) => list.name === 'Priority')
+  }
+  priorityListId.value = priorityList.id
+})
+
+const nonPriorityTaskLists = computed(() => {
+  return efotStore.taskLists.filter((list) => list.id !== priorityListId.value)
+})
+
+const selectedTasks = computed(() => {
+  if (activeTab.value === 'priority') {
+    return efotStore.taskLists.flatMap((taskList) => taskList.tasks.filter((task) => task.priority))
   } else {
-    addTab() // Add initial tab
+    const selectedList = efotStore.getTaskListById(activeTab.value)
+    return selectedList ? selectedList.tasks : []
   }
 })
 
-const addTab = () => {
-  if (tabs.value.length < 5) {
-    const newTabName = `List ${tabs.value.length + 1}`
-    tabs.value.push({ name: newTabName, tasks: [] })
-    activeTab.value = `tab-${tabs.value.length - 1}`
-    selectedListIndex.value = tabs.value.length - 1
-    saveTabs()
+const selectedListName = computed({
+  get() {
+    const selectedList = efotStore.getTaskListById(activeTab.value)
+    return selectedList ? selectedList.name : ''
+  },
+  set(newName) {
+    if (activeTab.value && activeTab.value !== 'priority') {
+      efotStore.updateTaskListName(activeTab.value, newName)
+    }
+  },
+})
+
+const removeTab = (listId) => {
+  efotStore.removeTaskList(listId)
+  activeTab.value = 'priority'
+}
+
+const removeTask = (task) => {
+  efotStore.removeTask(task.listId, task.id)
+}
+
+const goToCreateTask = () => {
+  router.push({ name: 'createTask' })
+}
+
+// Add this method to navigate to the edit task view
+const goToEditTask = (task) => {
+  router.push({ name: 'editTask', params: { listId: task.listId, taskId: task.id } })
+}
+
+const formatDate = (dateToFormat) => {
+  if (!dateToFormat) return ''
+  return date.formatDate(dateToFormat, 'MM/DD/YYYY')
+}
+
+const togglePriority = (task) => {
+  const updatedTask = { ...task, priority: !task.priority }
+
+  if (updatedTask.priority) {
+    updatedTask.originalListId = task.listId
+    efotStore.addTask(priorityListId.value, updatedTask)
+    efotStore.removeTask(task.listId, task.id)
+  } else {
+    updatedTask.listId = task.originalListId
+    efotStore.addTask(updatedTask.listId, updatedTask)
+    efotStore.removeTask(priorityListId.value, task.id)
   }
 }
 
-const removeTab = (index) => {
-  tabs.value.splice(index, 1)
-  if (tabs.value.length > 0) {
-    const newIndex = Math.max(0, index - 1) //avoid -1 index
-    activeTab.value = `tab-${newIndex}`
-    selectedListIndex.value = newIndex
-  }
-  saveTabs()
+const updateTask = (task) => {
+  efotStore.updateTask(task.listId, task.id, task)
 }
 
-const addTask = () => {
-  if (newTaskLabel.value.trim() !== '' && tabs.value.length > 0) {
-    tabs.value[selectedListIndex].value.tasks.push({ label: newTaskLabel.value, done: false })
-    newTaskLabel.value = '' // Clear the input
-    saveTabs()
-  } else if (newTaskLabel.value.trim() !== '') {
-    //no tabs created, create one and add the task
-    addTab()
-    tabs.value[selectedListIndex].value.tasks.push({ label: newTaskLabel.value, done: false })
-    newTaskLabel.value = ''
-    saveTabs()
+// --- Checkbox and Status Logic ---
+
+const checkboxStatus = (task) => {
+  if (task.status === 'completed') {
+    return true
+  } else if (task.status === 'in progress') {
+    return null //  Use null for indeterminate
+  } else {
+    return false
   }
 }
 
-const removeTask = (listIndex, taskIndex) => {
-  tabs.value[listIndex].tasks.splice(taskIndex, 1)
-  saveTabs()
+const checkboxColor = (task) => {
+  if (task.status === 'completed') return 'green-5'
+  if (task.status === 'in progress') return 'orange-5'
+  return undefined //default
 }
 
-// Save tabs to LocalStorage whenever they change
-const saveTabs = () => {
-  LocalStorage.set('todoTabs', tabs.value)
+const updateTaskStatus = (task, value) => {
+  let newStatus
+
+  // Determine the next status based on the current status and toggle direction.
+  if (task.status === 'not started') {
+    newStatus = 'in progress'
+  } else if (task.status === 'in progress') {
+    newStatus = 'completed'
+  } else {
+    newStatus = 'not started' // Cycle back to not started
+  }
+
+  efotStore.updateTask(task.listId, task.id, {
+    ...task,
+    status: newStatus,
+    done: newStatus === 'completed',
+  })
+}
+
+const taskStatusLabel = (task) => {
+  const statusMap = {
+    'not started': 'Not Started',
+    'in progress': 'In Progress',
+    completed: 'Completed',
+  }
+
+  return statusMap[task.status] || 'Unknown'
 }
 </script>
 
@@ -191,7 +266,7 @@ const saveTabs = () => {
   text-decoration: line-through;
 }
 .full-height-available {
-  height: calc(100vh - 48px); /*consider header height*/
+  height: calc(100% - 48px - 62px); /*consider header and button height*/
   overflow: auto; /* Enable scrolling if content overflows */
 }
 </style>

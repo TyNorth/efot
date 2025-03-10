@@ -56,6 +56,11 @@ const linksList = [
     icon: 'sym_o_checklist',
     link: { name: 'tasks' },
   },
+  {
+    title: 'Reminders',
+    icon: 'sym_o_notifications', // Or another suitable icon
+    link: { name: 'reminders' },
+  },
 ]
 
 const leftDrawerOpen = ref(false)

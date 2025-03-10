@@ -1,6 +1,6 @@
 <template>
-  <div class="calendar-view full-width">
-    <q-card flat>
+  <div class="calendar-view full-width full-height">
+    <q-card flat bordered class="full-height">
       <q-card-section class="bg-primary text-white">
         <div class="row items-center justify-between">
           <div class="col">
@@ -10,25 +10,34 @@
             <q-btn
               flat
               round
+              dense
               icon="sym_o_chevron_left"
               @click="prevMonth"
               :disable="isPreviousMonthDisabled"
               aria-label="Previous Month"
-              class="flex"
             />
             <q-btn
               flat
               round
+              dense
               icon="sym_o_chevron_right"
               @click="nextMonth"
               :disable="isNextMonthDisabled"
               aria-label="Next Month"
             />
+            <q-btn
+              flat
+              round
+              dense
+              icon="sym_o_add"
+              @click="goToCreateEvent"
+              aria-label="Add Event"
+            />
           </div>
         </div>
       </q-card-section>
 
-      <q-card-section class="q-pa-none">
+      <q-card-section class="q-pa-none full-height">
         <div class="row q-col-gutter-xs full-width">
           <div v-for="day in weekDays" :key="day" class="col text-center text-weight-bold">
             {{ day }}
@@ -41,24 +50,58 @@
             :key="weekIndex"
             class="row q-col-gutter-xs"
           >
-            <div v-for="(day, dayIndex) in week" :key="dayIndex" class="col">
+            <div
+              v-for="(day, dayIndex) in week"
+              :key="dayIndex"
+              class="col relative-position calendar-day"
+              @click="handleDayClick(day, $event)"
+            >
               <q-btn
                 :class="{
                   'full-width': true,
                   'text-grey-6': !isDateInCurrentMonth(day),
                   'bg-primary text-white': isToday(day) && isDateInCurrentMonth(day),
                   'bg-accent text-white': isSelected(day),
-                  'q-px-sm': true, // Keep consistent padding
+                  'q-px-sm': true,
                 }"
-                style="height: 30px !important"
                 flat
                 rounded
                 dense
                 :label="day ? day.getDate() : ''"
                 :disable="!day"
-                @click="handleDateClick(day)"
               >
               </q-btn>
+
+              <q-menu v-if="day && eventsForDay(day).length > 1" auto-close context-menu>
+                <q-list>
+                  <q-item
+                    clickable
+                    v-for="event in eventsForDay(day)"
+                    :key="event.id"
+                    @click="goToEditEvent(event)"
+                  >
+                    <q-item-section avatar>
+                      <q-icon :color="getEventColor(event)" name="sym_o_event" />
+                    </q-item-section>
+                    <q-item-section>
+                      <q-item-label>{{ event.title }}</q-item-label>
+                      <q-item-label caption>{{ event.startTime }}</q-item-label>
+                    </q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
+
+              <div v-if="day" class="absolute-bottom-left q-pb-px q-pl-px flex column">
+                <div
+                  v-for="event in eventsForDay(day)"
+                  :key="event.id"
+                  class="event-label q-mb-[2px]"
+                  :style="{ backgroundColor: getEventColor(event) }"
+                  @click.stop="goToEditEvent(event)"
+                >
+                  {{ getEventLabel(event) }}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -68,15 +111,25 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { date } from 'quasar'
+import { useEfotStore } from 'src/stores/efot-store'
+import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 
 const currentDate = ref(new Date())
 const year = ref(currentDate.value.getFullYear())
-const month = ref(currentDate.value.getMonth()) // 0-indexed (January is 0)
-const selectedDate = ref(null) // Keep track of the selected date
+const month = ref(currentDate.value.getMonth())
+const selectedDate = ref(null)
+const efotStore = useEfotStore()
+const { calendarEvents } = storeToRefs(efotStore)
+const router = useRouter()
 
 const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+onMounted(() => {
+  efotStore.initializeStore()
+})
 
 const monthName = computed(() => {
   return date.formatDate(new Date(year.value, month.value, 1), 'MMMM')
@@ -159,43 +212,109 @@ const isSelected = (dateToCheck) => {
   return date.isSameDate(dateToCheck, selectedDate.value, 'day')
 }
 
-const handleDateClick = (selected) => {
-  if (selected) {
-    selectedDate.value = selected
-    emit('date-selected', selected)
+const handleDayClick = (day, event) => {
+  if (day) {
+    // Check if the click target has the 'event-label' class
+    if (event.target.classList.contains('event-label')) {
+      // If it's an event label, do nothing here (click is handled by the label itself)
+    } else if (event.target.closest('.q-menu')) {
+      // Click on the q-menu, also do nothing.
+    } else {
+      // Otherwise, it's a click on an empty space, go to create event
+      goToCreateEvent(day)
+    }
   }
 }
 
-const emit = defineEmits(['date-selected'])
+const eventsForDay = (day) => {
+  if (!day) return []
+  return calendarEvents.value
+    .filter((event) => {
+      const eventStartDate = new Date(event.startDate)
+
+      if (event.allDay) {
+        return date.isSameDate(eventStartDate, day, 'day')
+      }
+      const eventEndDate = event.endDate ? new Date(event.endDate) : eventStartDate
+      return date.isBetweenDates(day, eventStartDate, eventEndDate, {
+        inclusiveFrom: true,
+        inclusiveTo: true,
+      })
+    })
+    .sort((a, b) => {
+      const timeA = a.startTime || ''
+      const timeB = b.startTime || ''
+      return timeA.localeCompare(timeB)
+    })
+}
+
+const getEventColor = (event) => {
+  return 'green'
+}
+
+const goToCreateEvent = (day = null) => {
+  const formattedDate = day ? date.formatDate(day, 'YYYY-MM-DD') : null
+  router.push({ name: 'createEvent', params: { date: formattedDate } })
+}
+
+const goToEditEvent = (event) => {
+  router.push({ name: 'editEvent', params: { eventId: event.id } })
+}
+
+const getEventLabel = (event) => {
+  return event.allDay ? event.title : `${event.title} @ ${event.startTime}`
+}
 </script>
 
 <style scoped>
 .calendar-view {
-  /* No longer needed: width and max-width are removed */
-  /* margin: auto; is removed because we want it to fill the container*/
-  padding-bottom: 0; /* Remove any extra padding */
+  padding-bottom: 0;
 }
 
-/* Ensure buttons maintain aspect ratio and fill space */
 .q-btn {
-  height: 0; /*Set height to 0 and use padding-bottom*/
-  padding-bottom: 100%; /*  Square aspect ratio */
+  height: 0;
+  padding-bottom: 100%;
 }
 
-/* Helper classes for full width and height */
 .full-width {
   width: 100%;
 }
 
-.full-height-available {
-  /* subtract week days row height (adjust as needed) */
-  display: flex; /* Use flexbox for inner layout */
-  flex-direction: column; /* Stack rows vertically */
+.full-height {
+  height: 100%;
 }
 
-/* Ensure rows within the calendar grid also fill height */
+.full-height-available {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 28px); /*Consider day name row*/
+}
+
 .full-height-available > div {
-  /* Target direct children (the rows) */
-  flex: auto; /* Each row takes equal height*/
+  flex: 1 1 0; /* Equal height rows */
+}
+
+.event-label {
+  font-size: 0.6rem;
+  line-height: 1;
+  border-radius: 2px;
+  padding: 0 2px;
+  color: white;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: auto;
+  margin-bottom: 2px;
+}
+
+.calendar-day {
+  position: relative;
+}
+
+.absolute-bottom-left {
+  position: absolute;
+  bottom: 0px;
+  left: 4px;
 }
 </style>
