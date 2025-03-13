@@ -6,4 +6,8 @@
 //
 </script>
 
-<style></style>
+<style>
+.material-symbols-outlined {
+  font-size: 18px !important;
+}
+</style>

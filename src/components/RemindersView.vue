@@ -1,12 +1,12 @@
 <template>
-  <q-card flat>
+  <q-card flat class="full-height">
     <q-card-section class="bg-primary text-white">
       <div class="text-h6">Reminders</div>
       <div class="row items-center q-gutter-sm">
-        <q-input dense outlined v-model="selectedDate" readonly>
+        <q-input dense outlined v-model="selectedDateFormatted" readonly type="date">
           <template v-slot:append>
             <q-icon name="sym_o_event" class="cursor-pointer">
-              <q-popup-proxy ref="qDateProxy" transition-show="scale" transition-hide="scale">
+              <q-popup-proxy transition-show="scale" transition-hide="scale">
                 <q-date v-model="selectedDate" mask="YYYY-MM-DD" @update:model-value="dateChanged">
                   <div class="row items-center justify-end">
                     <q-btn v-close-popup label="Close" color="primary" flat />
@@ -25,9 +25,14 @@
       </div>
     </q-card-section>
 
-    <q-card-section v-if="combinedReminders.length > 0">
-      <q-list>
-        <q-item v-for="reminder in combinedReminders" :key="reminder.id + reminder.type" clickable>
+    <q-card-section class="q-pa-none flex-grow">
+      <q-list dense class="full-height-scrollable">
+        <q-item
+          v-for="reminder in combinedReminders"
+          :key="reminder.id + reminder.type"
+          clickable
+          @click="goToReminder(reminder)"
+        >
           <q-item-section avatar>
             <q-icon
               :name="reminder.type === 'event' ? 'sym_o_event' : 'sym_o_checklist'"
@@ -38,9 +43,12 @@
           <q-item-section>
             <q-item-label>
               {{ reminder.title }}
-              <span v-if="reminder.type === 'task' && reminder.listName" class="text-grey">
-                ({{ reminder.listName }})</span
+              <span
+                v-if="reminder.type === 'task' && getListName(reminder.listId)"
+                class="text-grey"
               >
+                ({{ getListName(reminder.listId) }})
+              </span>
             </q-item-label>
             <q-item-label caption>
               {{ reminder.time }}
@@ -75,7 +83,7 @@
         </q-item>
       </q-list>
     </q-card-section>
-    <q-card-section v-else>
+    <q-card-section v-if="combinedReminders.length === 0" class="flex flex-center">
       <p class="text-center">No reminders for {{ formattedSelectedDate }}</p>
     </q-card-section>
   </q-card>
@@ -86,31 +94,46 @@ import { ref, computed, onMounted } from 'vue'
 import { useEfotStore } from 'src/stores/efot-store'
 import { storeToRefs } from 'pinia'
 import { date } from 'quasar'
+import { useRouter } from 'vue-router'
 
 const efotStore = useEfotStore()
-const { tasksWithReminders, eventsWithReminders } = storeToRefs(efotStore) // Reactive refs
-const selectedDate = ref(date.formatDate(new Date(), 'YYYY-MM-DD')) // YYYY-MM-DD format
+const { tasksWithReminders, eventsWithReminders, getTaskListById } = storeToRefs(efotStore) // Get reactive getters
+const selectedDate = ref(date.startOfDate(new Date(), 'day')) // Use Date object internally
+const router = useRouter()
+
+const selectedDateFormatted = computed(() => {
+  return date.formatDate(selectedDate.value, 'YYYY-MM-DD')
+})
 
 const formattedSelectedDate = computed(() => {
   return date.formatDate(selectedDate.value, 'dddd, MMMM D, YYYY')
 })
+
 onMounted(() => {
-  efotStore.initializeStore() //ensure store is initialized
+  efotStore.initializeStore()
 })
+
+// Getter for list name, for reactivity
+const getListName = (listId) => {
+  const list = efotStore.getTaskListById(listId) // Use the getter
+  return list ? list.name : 'Unknown List'
+}
 
 const combinedReminders = computed(() => {
   const reminders = []
+  const selectedDateObj = date.startOfDate(selectedDate.value, 'day')
 
   // Add calendar events
   eventsWithReminders.value.forEach((event) => {
-    //Check if event is in range
+    const eventStartDate = date.startOfDate(new Date(event.startDate), 'day')
+    const eventEndDate = event.endDate
+      ? date.startOfDate(new Date(event.endDate), 'day')
+      : eventStartDate
     if (
-      date.isBetweenDates(
-        selectedDate.value,
-        event.startDate,
-        event.endDate ? event.endDate : event.startDate,
-        { inclusiveFrom: true, inclusiveTo: true },
-      )
+      date.isBetweenDates(selectedDateObj, eventStartDate, eventEndDate, {
+        inclusiveFrom: true,
+        inclusiveTo: true,
+      })
     ) {
       reminders.push({
         id: event.id,
@@ -118,53 +141,61 @@ const combinedReminders = computed(() => {
         title: event.title,
         description: event.description,
         time: event.allDay ? 'All Day' : event.startTime,
-        date: event.startDate, //needed for sorting
+        dateTime: event.allDay ? eventStartDate : new Date(event.startDate + 'T' + event.startTime), // For sorting
       })
     }
   })
 
   // Add tasks with reminders
   tasksWithReminders.value.forEach((task) => {
-    if (date.isSameDate(task.reminderDate, selectedDate.value, 'day')) {
-      const list = efotStore.getTaskListById(task.listId)
+    const reminderDate = task.reminderDate
+      ? date.startOfDate(new Date(task.reminderDate), 'day')
+      : null
+    if (reminderDate && date.isSameDate(reminderDate, selectedDateObj, 'day')) {
+      const taskDateTime = new Date(task.reminderDate + 'T' + (task.reminderTime || '00:00'))
       reminders.push({
         id: task.id,
         type: 'task',
         title: task.label,
-        listName: list ? list.name : 'Unknown List', // Handle cases where list might be deleted
-        time: task.reminderTime,
+        listName: task.listId, // Store listId directly
+        time: task.reminderTime || 'All Day', // Default to All Day
         priority: task.priority,
-        date: task.reminderDate, //needed for sorting
-        listId: task.listId, //needed for removing
+        dateTime: taskDateTime, // For sorting.
+        listId: task.listId,
       })
     }
   })
 
-  // Sort by priority (high priority first) and then by time
+  // Sort by: 1. Priority (tasks only), 2. Date/Time
   reminders.sort((a, b) => {
+    // Prioritize tasks by 'priority' flag
     if (a.type === 'task' && b.type === 'task') {
       if (a.priority && !b.priority) return -1
       if (!a.priority && b.priority) return 1
     }
-    //sort by time
-    return a.time.localeCompare(b.time)
+    // Then sort all items by date and time
+    return a.dateTime - b.dateTime // Use Date objects for comparison
   })
 
   return reminders
 })
 
-const dateChanged = () => {
-  //Any logic needed when date changes
+const dateChanged = (newDate) => {
+  selectedDate.value = date.startOfDate(new Date(newDate), 'day') //CRUCIAL change
 }
+
 const goToToday = () => {
-  selectedDate.value = date.formatDate(new Date(), 'YYYY-MM-DD')
+  selectedDate.value = date.startOfDate(new Date(), 'day') //CRUCIAL change
 }
 
 const prevDay = () => {
-  selectedDate.value = date.subtractFromDate(selectedDate.value, { days: 1, months: 0, years: 0 })
+  selectedDate.value = date.startOfDate(
+    date.subtractFromDate(selectedDate.value, { days: 1 }),
+    'day',
+  ) //CRUCIAL change
 }
 const nextDay = () => {
-  selectedDate.value = date.addToDate(selectedDate.value, { days: 1, months: 0, years: 0 })
+  selectedDate.value = date.startOfDate(date.addToDate(selectedDate.value, { days: 1 }), 'day') //CRUCIAL change
 }
 
 const removeTaskReminder = (reminder) => {
@@ -174,4 +205,20 @@ const removeTaskReminder = (reminder) => {
 const removeEventReminder = (reminder) => {
   efotStore.updateCalendarEvent(reminder.id, { isReminder: false })
 }
+
+const goToReminder = (reminder) => {
+  if (reminder.type === 'event') {
+    router.push({ name: 'editEvent', params: { eventId: reminder.id } })
+  }
+  //TODO: else go to task
+}
 </script>
+<style scoped>
+.full-height {
+  height: 100%;
+}
+.full-height-scrollable {
+  height: 100%;
+  overflow: auto;
+}
+</style>

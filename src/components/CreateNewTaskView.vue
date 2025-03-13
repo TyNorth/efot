@@ -28,7 +28,7 @@
         mask="date"
       >
         <template v-slot:append>
-          <q-icon name="event" class="cursor-pointer">
+          <q-icon name="sym_o_event" class="cursor-pointer">
             <q-popup-proxy cover transition-show="scale" transition-hide="scale">
               <q-date v-model="task.reminderDate" mask="YYYY-MM-DD" />
             </q-popup-proxy>
@@ -44,7 +44,7 @@
         mask="time"
       >
         <template v-slot:append>
-          <q-icon name="access_time" class="cursor-pointer">
+          <q-icon name="sym_o_access_time" class="cursor-pointer">
             <q-popup-proxy cover transition-show="scale" transition-hide="scale">
               <q-time v-model="task.reminderTime" mask="HH:mm" format24h />
             </q-popup-proxy>

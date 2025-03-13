@@ -78,7 +78,7 @@
             </q-item-label>
           </q-item-section>
 
-          <q-item-section side>
+          <q-item-section side class="list-btns">
             <q-btn
               flat
               round
@@ -90,17 +90,19 @@
             />
             <q-btn
               v-if="task.priority"
-              icon="star"
+              icon="sym_o_star"
               color="yellow"
               flat
+              round
               dense
               @click.stop="togglePriority(task)"
             />
             <q-btn
               v-else
-              icon="star_outline"
+              icon="sym_o_star_outline"
               color="grey"
               flat
+              round
               dense
               @click.stop="togglePriority(task)"
             />
@@ -268,5 +270,11 @@ const taskStatusLabel = (task) => {
 .full-height-available {
   height: calc(100% - 48px - 62px); /*consider header and button height*/
   overflow: auto; /* Enable scrolling if content overflows */
+}
+.list-btns {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-items: center;
 }
 </style>

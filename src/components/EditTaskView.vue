@@ -84,6 +84,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useEfotStore } from 'src/stores/efot-store'
 import { storeToRefs } from 'pinia'
+import { date } from 'quasar'
 
 const router = useRouter()
 const route = useRoute()
@@ -130,9 +131,14 @@ const listOptions = computed(() => {
   }))
 })
 
+const selectedDateFormatted = computed(() => {
+  return date.formatDate(task.value.reminderDate, 'dddd, MMMM D, YYYY')
+})
+
 const saveTask = () => {
+  task.value.reminderDate = date.formatDate(task.value.reminderDate, 'dddd, MMMM D, YYYY')
   if (task.value.label.trim() !== '' && task.value.listId) {
-    efotStore.updateTask(task.value.listId, task.value.id, task.value)
+    efotStore.updateTask(task.value)
     router.push({ name: 'tasks' })
   }
 }
